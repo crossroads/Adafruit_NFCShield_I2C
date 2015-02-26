@@ -1,27 +1,23 @@
 /**************************************************************************/
 /*! 
-    @file     Adafruit_NFCShield_I2C.h
-    @author   Adafruit Industries
-	@license  BSD (see license.txt)
+ @file     Adafruit_NFCShield_I2C_Sony.h
+ @author   Ian W Johnston with acknowledgement to Andrew King and Tom Pike (Crossroads foundation)
+ @license  BSD (see license.txt)
 	
 	This is a library for the Adafruit PN532 NFC/RFID shield
-	This library works with the Adafruit NFC breakout 
+	This library works with the Adafruit NFC breakout
 	----> https://www.adafruit.com/products/364
 	
-	Check out the links above for our tutorials and wiring diagrams 
+	Check out the links above for our tutorials and wiring diagrams
 	These chips use I2C to communicate
 	
-	Adafruit invests time and resources providing this open source code, 
-	please support Adafruit and open-source hardware by purchasing 
+	Adafruit invests time and resources providing this open source code,
+	please support Adafruit and open-source hardware by purchasing
 	products from Adafruit!
-
+ 
 	@section  HISTORY
-
-    v1.3  - Modified to work with I2C
-	
-	v1.1  - Added full command list
-          - Added 'verbose' mode flag to constructor to toggle debug output
-          - Changed readPassiveTargetID() to return variable length values
+ 
+ v1.0 - New _Sony.h file based on the work done by Adafruit Industries for the Mifare card set. Added baudrate     definitions for Felica card.
 	
 */
 /**************************************************************************/
@@ -97,6 +93,10 @@
 #define PN532_I2C_READYTIMEOUT              (20)
 
 #define PN532_MIFARE_ISO14443A              (0x00)
+
+#define PN532_FELICA_SLOW                   (0x01)
+#define PN532_FELICA_FAST                   (0x02)
+#define FELICIA_CARD_ID_LEN                 6
 
 // Mifare Commands
 #define MIFARE_CMD_AUTH_A                   (0x60)

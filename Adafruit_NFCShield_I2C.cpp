@@ -1,43 +1,26 @@
 /**************************************************************************/
 /*! 
-    @file     Adafruit_NFCShield_I2C.cpp
-    @author   Adafruit Industries
-	@license  BSD (see license.txt)
+ @file     Adafruit_NFCShield_I2C_Sony.cpp
+ @author   Ian W Johnston with acknowledgement to Andrew King and Tom Pike (Crossroads foundation)
+            This is the Adafruit_I2C NFC Shield library, modified to read Sony FeliCa cards.
+ @license  BSD (see license.txt)
 	
 	I2C Driver for NXP's PN532 NFC/13.56MHz RFID Transceiver
-
+ 
 	This is a library for the Adafruit PN532 NFC/RFID shields
-	This library works with the Adafruit NFC breakout 
+	This library works with the Adafruit NFC breakout
 	----> https://www.adafruit.com/products/364
 	
-	Check out the links above for our tutorials and wiring diagrams 
-	These chips use I2C to communicate
-	
-	Adafruit invests time and resources providing this open source code, 
-	please support Adafruit and open-source hardware by purchasing 
+ 
+	Adafruit invests time and resources providing this open source code,
+	please support Adafruit and open-source hardware by purchasing
 	products from Adafruit!
-
+ 
 	@section  HISTORY
-
-    v1.4 - Added setPassiveActivationRetries()
-	
-    v1.3 - Modified to work with I2C
-	
-    v1.2 - Added writeGPIO()
-         - Added readGPIO()
-
-    v1.1 - Changed readPassiveTargetID() to handle multiple UID sizes
-         - Added the following helper functions for text display
-             static void PrintHex(const byte * data, const uint32_t numBytes)
-             static void PrintHexChar(const byte * pbtData, const uint32_t numBytes)
-         - Added the following Mifare Classic functions:
-             bool mifareclassic_IsFirstBlock (uint32_t uiBlock)
-             bool mifareclassic_IsTrailerBlock (uint32_t uiBlock)
-             uint8_t mifareclassic_AuthenticateBlock (uint8_t * uid, uint8_t uidLen, uint32_t blockNumber, uint8_t keyNumber, uint8_t * keyData)
-             uint8_t mifareclassic_ReadDataBlock (uint8_t blockNumber, uint8_t * data)
-             uint8_t mifareclassic_WriteDataBlock (uint8_t blockNumber, uint8_t * data)
-         - Added the following Mifare Ultalight functions:
-             uint8_t mifareultralight_ReadPage (uint8_t page, uint8_t * buffer)	
+ 
+    v1.0 - New cpp file based on the work done by Adafruit Industries for the Mifare card
+           Adds the Sony FELICA card command packet to obtain the Card ID. The FELICA card
+           is a NFC Type 3 tag (ISO-18092 and JIS-X-6319-4) from Sony Corp
 */
 /**************************************************************************/
 #if ARDUINO >= 100
@@ -444,15 +427,44 @@ boolean Adafruit_NFCShield_I2C::setPassiveActivationRetries(uint8_t maxRetries) 
 */
 /**************************************************************************/
 boolean Adafruit_NFCShield_I2C::readPassiveTargetID(uint8_t cardbaudrate, uint8_t * uid, uint8_t * uidLength, uint16_t timeout) {
+  /*!
+
+    FELICA CARD:
+
+    Here we set up the PN532 buffer to send a Request frame to the FeliCa card.
+
+    FeliCa InListPassiveTarget Request
+    ==================================
+    0x00: 0xd4 Command Code
+    0x01: 0x4a Subcommand Code
+    0x02: 0x01 MaxTg Max number of targets
+    0x03: 0x01 BRTY Baud Rate and Communications Mode = ISO 18092
+
+    Sony FeliCa Card User's Manual
+    (NFCIP-1 Polling Request Frame Format ECMA-340 Sec 11.2.2.5)
+
+    0x04: 0x00 Command Mode
+    0x05:      System Code high byte
+    0x06:      System Code low byte
+    0x07: 0x00 Request Code: "No Request"
+    0x08: 0x00 TSN - Time Slot. 0 = only single time slot
+
+  ********************************************************************/
+
   pn532_packetbuffer[0] = PN532_COMMAND_INLISTPASSIVETARGET;
-  pn532_packetbuffer[1] = 1;  // max 1 cards at once (we can set this to 2 later)
+  pn532_packetbuffer[1] = 1; // One card
   pn532_packetbuffer[2] = cardbaudrate;
-  
-  if (! sendCommandCheckAck(pn532_packetbuffer, 3, timeout))
+  pn532_packetbuffer[3] = 0x00;
+  pn532_packetbuffer[4] = 0xFF;
+  pn532_packetbuffer[5] = 0xFF;
+  pn532_packetbuffer[6] = 0x00; // Request Code (Command Code = 00 to get Response packet
+  pn532_packetbuffer[7] = 0x00; // Time Slot
+
+  if (!sendCommandCheckAck(pn532_packetbuffer, 8, timeout))
   {
     #ifdef PN532DEBUG
-	Serial.println(F("No card(s) read"));
-	#endif
+  	Serial.println(F("No card(s) read"));
+  	#endif
     return 0x0;  // no cards read
   }
   
@@ -481,23 +493,43 @@ boolean Adafruit_NFCShield_I2C::readPassiveTargetID(uint8_t cardbaudrate, uint8_
   #endif
  
   // read data packet
-  wirereaddata(pn532_packetbuffer, 20);
-  
-  // check some basic stuff
-  /* ISO14443A card response should be in the following format:
-  
-    byte            Description
-    -------------   ------------------------------------------
-    b0..6           Frame header and preamble
-    b7              Tags Found
-    b8              Tag Number (only one used in this example)
-    b9..10          SENS_RES
-    b11             SEL_RES
-    b12             NFCID Length
-    b13..NFCIDLen   NFCID                                      */
+  wirereaddata(pn532_packetbuffer, 26);
+ 
+  /*
+    Felica card response should be in the following format:
+    
+    FeliCa InListPassiveTarget Response
+    ===================================
+
+    0x00-0x04: RC-956 Envelope
+
+    0x05: 0xd5 Command Code
+    0x06: 0x4b Subcommand code
+    0x07:      NbTg Number of Targets
+    0x08: 0x01 Logical number of Targets
+    0x09: 0x12 Length of Polling Response (0x12 for "No Request")
+
+    Sony FeliCa Card Users Manual
+
+    0x0a: 0x01 Response Code to Polling Command
+    0x0b-0x12: IDm (Manufacturer ID)
+    0x13-0x1a: PMm (Manufature Parameter)
+
+    Tag ID number are bits D2 - D7 of IDm Packet (0x0b - 0x12) Total 6 bytes
+
+    |D0|D1|D2|D3|D4|D5|D6|D7|D8|D9|D10|D11|D12|D13|D14|D15|
+    <---------------------> |<---------------------------->
+             IDm                        PMm
+           |              |
+           |<------------>|
+              Card ID No.
+
+    See Felica Card Users Manual Excerpted Edition Page 14    
+   */
+    
   
 #ifdef MIFAREDEBUG
-    Serial.print(F("Found ")); Serial.print(pn532_packetbuffer[7], DEC); Serial.println(F(" tags"));
+  Serial.print(F("Found ")); Serial.print(pn532_packetbuffer[7], DEC); Serial.println(F(" tags"));
 #endif
   if (pn532_packetbuffer[7] != 1) 
     return 0;
@@ -506,24 +538,22 @@ boolean Adafruit_NFCShield_I2C::readPassiveTargetID(uint8_t cardbaudrate, uint8_
   sens_res <<= 8;
   sens_res |= pn532_packetbuffer[10];
 #ifdef MIFAREDEBUG
-    Serial.print(F("ATQA: 0x"));  Serial.println(sens_res, HEX);
-    Serial.print(F("SAK: 0x"));  Serial.println(pn532_packetbuffer[11], HEX);
+  Serial.print(F("ATQA: 0x"));  Serial.println(sens_res, HEX);
+  Serial.print(F("SAK: 0x"));  Serial.println(pn532_packetbuffer[11], HEX);
 #endif
   
-  /* Card appears to be Mifare Classic */
-  *uidLength = pn532_packetbuffer[12];
 #ifdef MIFAREDEBUG
-    Serial.print(F("UID:"));
+  Serial.print(F("UID:"));
 #endif
-  for (uint8_t i=0; i < pn532_packetbuffer[12]; i++) 
+  for (uint8_t i=0; (i < FELICIA_CARD_ID_LEN) && (i < (*uidLength)); i++)
   {
-    uid[i] = pn532_packetbuffer[13+i];
+    uid[i] = pn532_packetbuffer[0x0b+i];
 #ifdef MIFAREDEBUG
-      Serial.print(F(" 0x"));Serial.print(uid[i], HEX);
+    Serial.print(F(" 0x"));Serial.print(uid[i], HEX);
 #endif
   }
 #ifdef MIFAREDEBUG
-    Serial.println();
+  Serial.println();
 #endif
 
   return 1;
